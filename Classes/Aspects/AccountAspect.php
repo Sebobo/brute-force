@@ -1,9 +1,9 @@
 <?php
 namespace AE\BruteForce\Aspects;
 
+use GuzzleHttp\Psr7\ServerRequest;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Aop\JoinPointInterface;
-use Neos\Flow\Http\Request;
 use Neos\Flow\Security\Account;
 use Neos\SwiftMailer\Message;
 
@@ -31,17 +31,15 @@ class AccountAspect {
 
     /**
      * @Flow\AfterReturning("method(Neos\Flow\Security\Account->authenticationAttempted())")
-     * @param JoinPointInterface $joinPoint
-     * @return void
      */
-    public function bruteForceAccountLocking(JoinPointInterface $joinPoint)
+    public function bruteForceAccountLocking(JoinPointInterface $joinPoint): void
     {
-        $failedAttemptsThreshold = intval($this->settings['failedAttemptsThreshold']);
+        $failedAttemptsThreshold = (int)$this->settings['failedAttemptsThreshold'];
         if ($failedAttemptsThreshold === 0) {
             return;
         }
 
-        /** @var \Neos\Flow\Security\Account $account */
+        /** @var Account $account */
         $account = $joinPoint->getProxy();
 
         // Deactivate account if failed attempts exceed threshold
@@ -51,26 +49,23 @@ class AccountAspect {
         }
     }
 
-    /**
-     * @param Account $account
-     * @return void
-     */
-    protected function sendNotificationMail(Account $account)
+    protected function sendNotificationMail(Account $account): void
     {
         $notificationMailSettings = $this->settings['notificationMail'];
         if (!$notificationMailSettings['to']) {
             return;
         }
-        $httpRequest = Request::createFromEnvironment();
+        $uri = ServerRequest::getUriFromGlobals();
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         $failedAttemptsThreshold = $this->settings['failedAttemptsThreshold'];
         $time = (new \DateTime())->format('Y-m-d H:i');
 
-        $replacePlaceholders = function($string) use ($account, $httpRequest, $failedAttemptsThreshold, $time) {
+        $replacePlaceholders = static function($string) use ($account, $uri, $clientIp, $failedAttemptsThreshold, $time) {
             return str_replace([
                 '{domain}', '{ip}', '{userAgent}', '{accountIdentifier}', '{failedAttemptsThreshold}', '{time}'
             ], [
-                $httpRequest->getUri()->getHost(),
-                $httpRequest->getClientIpAddress(),
+                $uri->getHost(),
+                $clientIp,
                 $_SERVER['HTTP_USER_AGENT'],
                 $account->getAccountIdentifier(),
                 $failedAttemptsThreshold,
